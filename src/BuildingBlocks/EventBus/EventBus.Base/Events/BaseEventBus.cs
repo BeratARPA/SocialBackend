@@ -1,46 +1,44 @@
 ﻿using EventBus.Base.Abstraction;
+using EventBus.Base.SubscriptionManagers;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace EventBus.Base.Events
 {
-    public abstract class BaseEventBus : IEventBus
+    public abstract class BaseEventBus : IEventBus, IDisposable
     {
         public readonly IServiceProvider ServiceProvider;
         public readonly IEventBusSubscriptionManager SubscriptionManager;
 
-        private EventBusConfig eventBusConfig;
+        public EventBusConfig EventBusConfig { get; private set; }
 
         public BaseEventBus(EventBusConfig config, IServiceProvider serviceProvider)
         {
-            this.eventBusConfig = config;
-            this.ServiceProvider = serviceProvider;
+            EventBusConfig = config;
+            ServiceProvider = serviceProvider;
+            SubscriptionManager = new InMemoryEventBusSubscriptionManager(ProcessEventName);
         }
 
         public virtual string ProcessEventName(string eventName)
         {
-            if (eventBusConfig.DeleteEventPrefix)
-                eventName = eventName.TrimStart(eventBusConfig.EventNamePrefix.ToArray());
+            if (EventBusConfig.DeleteEventPrefix)
+                eventName = eventName.TrimStart(EventBusConfig.EventNamePrefix.ToArray());
 
-            if (eventBusConfig.DeleteEventSuffix)
-                eventName = eventName.TrimEnd(eventBusConfig.EventNameSuffix.ToArray());
+            if (EventBusConfig.DeleteEventSuffix)
+                eventName = eventName.TrimEnd(EventBusConfig.EventNameSuffix.ToArray());
 
             return eventName;
         }
 
         public virtual string GetSubName(string eventName)
         {
-            return $"{eventBusConfig.SubscriberClientAppName}.{ProcessEventName(eventName)}";
+            return $"{EventBusConfig.SubscriberClientAppName}.{ProcessEventName(eventName)}";
         }
 
         public virtual void Dispose()
         {
-            eventBusConfig = null;
+            EventBusConfig = null;
+            SubscriptionManager.Clear();
         }
 
         public async Task<bool> ProcessEvent(string eventName, string message)
@@ -60,7 +58,7 @@ namespace EventBus.Base.Events
                         var handler = ServiceProvider.GetService(subscription.HandlerType);
                         if (handler == null) continue;
 
-                        var eventType = SubscriptionManager.GetEventTypeByName($"{eventBusConfig.EventNamePrefix}{eventName}{eventBusConfig.EventNameSuffix}");
+                        var eventType = SubscriptionManager.GetEventTypeByName($"{EventBusConfig.EventNamePrefix}{eventName}{EventBusConfig.EventNameSuffix}");
                         var integrationEvent = JsonConvert.DeserializeObject(message, eventType);
 
                         var concreteType = typeof(IIntegrationEventHandler<>).MakeGenericType(eventType);
@@ -74,14 +72,13 @@ namespace EventBus.Base.Events
             return processed;
         }
 
+
+
+
         public abstract void Publish(IntegrationEvent @event);
 
-        public abstract void Subscribe<T, TH>()
-            where T : IntegrationEvent
-            where TH : IIntegrationEventHandler<T>;
+        public abstract void Subscribe<T, TH>() where T : IntegrationEvent where TH : IIntegrationEventHandler<T>;
 
-        public abstract void Unsubscribe<T, TH>()
-            where T : IntegrationEvent
-            where TH : IIntegrationEventHandler<T>;
+        public abstract void Unsubscribe<T, TH>() where T : IntegrationEvent where TH : IIntegrationEventHandler<T>;
     }
 }

@@ -18,7 +18,6 @@
     {
         RabbitMQ = 1,
         AzureServiceBus = 2,
-        InMemory = 3,
-        Kafka = 4
+        Kafka = 3
     }
 }

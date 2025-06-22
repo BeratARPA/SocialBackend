@@ -2,13 +2,13 @@
 
 namespace EventBus.Base.Abstraction
 {
-    public interface IIntegrationEventHandler<TIntegrationEvent>:IIntegrationEventHandler where TIntegrationEvent : IntegrationEvent
+    public interface IIntegrationEventHandler<TIntegrationEvent> : IntegrationEventHandler where TIntegrationEvent : IntegrationEvent
     {
         Task Handle(TIntegrationEvent @event);
     }
 
-    public interface IIntegrationEventHandler
-    {        
-        Task Handle(IntegrationEvent @event);
+
+    public interface IntegrationEventHandler
+    {
     }
 }
