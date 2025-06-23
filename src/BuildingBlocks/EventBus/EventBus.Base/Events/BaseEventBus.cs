@@ -72,9 +72,6 @@ namespace EventBus.Base.Events
             return processed;
         }
 
-
-
-
         public abstract void Publish(IntegrationEvent @event);
 
         public abstract void Subscribe<T, TH>() where T : IntegrationEvent where TH : IIntegrationEventHandler<T>;
