@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using UserService.Application.Interfaces;
 using UserService.Domain.Aggregates;
 using UserService.Domain.SeedWork;
+using UserService.Infrastructure.EntityConfigurations;
 
 namespace UserService.Infrastructure.Context
 {
@@ -43,7 +44,7 @@ namespace UserService.Infrastructure.Context
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-
+            modelBuilder.ApplyConfiguration(new UserEntityConfigurations());
         }
     }
 }
