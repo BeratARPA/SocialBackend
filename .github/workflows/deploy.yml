@@ -1,0 +1,124 @@
+name: Build and Deploy with Rollback to IIS
+
+on:
+  push:
+    branches:
+      - master  # Ana branch'ını değiştir
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted  # Kendi sunucundaki runner
+
+    env:
+      API_GATEWAY_PATH: 'C:\inetpub\wwwroot\SocialApiGateway'
+      IDENTITY_SERVICE_PATH: 'C:\inetpub\wwwroot\IdentityService'
+      USER_SERVICE_PATH: 'C:\inetpub\wwwroot\UserService'
+      BACKUP_DIR: 'C:\inetpub\wwwroot\Backup'
+
+    steps:
+    - name: Kodları çek
+      uses: actions/checkout@v4
+
+    - name: Restore
+      run: dotnet restore Social.sln
+
+    - name: Test
+      run: dotnet test Social.sln
+
+    - name: Publish ApiGateway
+      run: dotnet publish src/ApiGateways/Social.ApiGateway/Social.ApiGateway.csproj -c Release -o ./publish/ApiGateway
+
+    - name: Publish IdentityService
+      run: dotnet publish src/Services/IdentityService/IdentityService.API/IdentityService.API.csproj -c Release -o ./publish/IdentityService
+
+    - name: Publish UserService
+      run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
+
+    - name: Backup Existing Deployments
+      run: |
+        mkdir -Force $env:BACKUP_DIR
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+
+        Compress-Archive -Path "$env:API_GATEWAY_PATH\*" -DestinationPath "$env:BACKUP_DIR\ApiGateway_$timestamp.zip"
+        Compress-Archive -Path "$env:IDENTITY_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\IdentityService_$timestamp.zip"
+        Compress-Archive -Path "$env:USER_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\UserService_$timestamp.zip"
+
+      shell: powershell
+
+    - name: Deploy ApiGateway to IIS
+      run: |
+        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
+        Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
+        Import-Module WebAdministration
+        Restart-WebAppPool -Name "SocialApiGateway"
+
+      shell: powershell
+
+    - name: Deploy IdentityService to IIS
+      run: |
+        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
+        Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
+        Import-Module WebAdministration
+        Restart-WebAppPool -Name "IdentityService"
+
+      shell: powershell
+
+    - name: Deploy UserService to IIS
+      run: |
+        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
+        Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
+        Import-Module WebAdministration
+        Restart-WebAppPool -Name "UserService"
+
+      shell: powershell
+
+    - name: Health Check
+      run: |
+        $apiGatewayUrl = "https://api.iscsocial.com/health"
+        $identityUrl = "https://api.iscsocial.com/identity/health"
+        $userUrl = "https://api.iscsocial.com/user/health"
+
+        $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
+
+        foreach ($url in $urls) {
+          try {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) {
+              Write-Host "ERROR: Health check failed for $url"
+              exit 1
+            }
+          } catch {
+            Write-Host "ERROR: Health check failed for $url"
+            exit 1
+          }
+        }
+
+      shell: powershell
+
+    - name: Rollback if Health Check Fails
+      if: failure()
+      run: |
+        Write-Host "Rolling back to previous version..."
+
+        # Bul en son backup dosyalarını
+        $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+        # Var olan bozuk deploy sil
+        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
+        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
+        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
+
+        # Backup zip'lerini geri aç
+        Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:API_GATEWAY_PATH" -Force
+        Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
+        Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
+
+        # Pool restart
+        Import-Module WebAdministration
+        Restart-WebAppPool -Name "SocialApiGateway"
+        Restart-WebAppPool -Name "IdentityService"
+        Restart-WebAppPool -Name "UserService"
+
+      shell: powershell
