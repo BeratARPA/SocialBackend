@@ -19,11 +19,6 @@ jobs:
     - name: Kodları çek
       uses: actions/checkout@v4
 
-    - name: .NET kur
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '9.0.x'
-
     - name: Restore
       run: dotnet restore Social.sln
 
