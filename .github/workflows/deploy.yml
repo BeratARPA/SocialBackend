@@ -3,11 +3,11 @@ name: Build and Deploy with Rollback to IIS
 on:
   push:
     branches:
-      - master  # Ana branch'ını değiştir
+      - master
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted  # Kendi sunucundaki runner
+    runs-on: self-hosted
 
     env:
       API_GATEWAY_PATH: 'C:\inetpub\wwwroot\SocialApiGateway'
@@ -16,13 +16,13 @@ jobs:
       BACKUP_DIR: 'C:\inetpub\wwwroot\Backup'
 
     steps:
-    - name: Kodları çek
+    - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Restore
+    - name: Restore Dependencies
       run: dotnet restore Social.sln
 
-    - name: Test
+    - name: Run Tests
       run: dotnet test Social.sln
 
     - name: Publish ApiGateway
@@ -42,7 +42,6 @@ jobs:
         Compress-Archive -Path "$env:API_GATEWAY_PATH\*" -DestinationPath "$env:BACKUP_DIR\ApiGateway_$timestamp.zip"
         Compress-Archive -Path "$env:IDENTITY_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\IdentityService_$timestamp.zip"
         Compress-Archive -Path "$env:USER_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\UserService_$timestamp.zip"
-
       shell: powershell
 
     - name: Deploy ApiGateway to IIS
@@ -51,7 +50,6 @@ jobs:
         Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
         Import-Module WebAdministration
         Restart-WebAppPool -Name "SocialApiGateway"
-
       shell: powershell
 
     - name: Deploy IdentityService to IIS
@@ -60,7 +58,6 @@ jobs:
         Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
         Import-Module WebAdministration
         Restart-WebAppPool -Name "IdentityService"
-
       shell: powershell
 
     - name: Deploy UserService to IIS
@@ -69,14 +66,13 @@ jobs:
         Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
         Import-Module WebAdministration
         Restart-WebAppPool -Name "UserService"
-
       shell: powershell
 
     - name: Health Check
       run: |
         $apiGatewayUrl = "https://api.iscsocial.com/health"
-        $identityUrl = "http://localhost:8080/identity/health"
-        $userUrl = "http://localhost:8080/user/health"
+        $identityUrl = "https://api.iscsocial.com/identity/health"
+        $userUrl = "https://api.iscsocial.com/user/health"
 
         $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
 
@@ -88,11 +84,10 @@ jobs:
               exit 1
             }
           } catch {
-            Write-Host "ERROR: Health check failed for $url"
+            Write-Host "ERROR: Health check exception for $url"
             exit 1
           }
         }
-
       shell: powershell
 
     - name: Rollback if Health Check Fails
@@ -100,25 +95,20 @@ jobs:
       run: |
         Write-Host "Rolling back to previous version..."
 
-        # Bul en son backup dosyalarını
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-        # Var olan bozuk deploy sil
         Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
         Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
         Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
 
-        # Backup zip'lerini geri aç
         Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:API_GATEWAY_PATH" -Force
         Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
         Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
 
-        # Pool restart
         Import-Module WebAdministration
         Restart-WebAppPool -Name "SocialApiGateway"
         Restart-WebAppPool -Name "IdentityService"
         Restart-WebAppPool -Name "UserService"
-
       shell: powershell
