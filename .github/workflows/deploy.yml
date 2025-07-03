@@ -75,15 +75,15 @@ jobs:
     - name: Health Check
       run: |
         $apiGatewayUrl = "https://api.iscsocial.com/health"
-        $identityUrl = "https://api.iscsocial.com/identity/health"
-        $userUrl = "https://api.iscsocial.com/user/health"
+        $identityUrl = "http://localhost:8080/identity/health"
+        $userUrl = "http://localhost:8080/user/health"
 
         $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
 
         foreach ($url in $urls) {
           try {
             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-            if ($response.StatusCode -ne 200) {
+            if ($response.StatusCode -ne 200 -or ($response.Content -match '"status"\s*:\s*"Unhealthy"')) {
               Write-Host "ERROR: Health check failed for $url"
               exit 1
             }
