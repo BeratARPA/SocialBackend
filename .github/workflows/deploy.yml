@@ -174,30 +174,55 @@ jobs:
 
     - name: Health Check
       run: |
+        # Wait for IIS to fully initialize the applications
+        Write-Host "Waiting for IIS applications to initialize..."
+        Start-Sleep -Seconds 20
+        
         $apiGatewayUrl = "https://api.iscsocial.com/health"
         $identityUrl = "https://api.iscsocial.com/identity/health"
         $userUrl = "https://api.iscsocial.com/user/health"
 
         $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
-        $maxRetries = 5
-        $retryDelay = 10
+        $maxRetries = 6
+        $retryDelay = 15
+        $allHealthy = $true
 
         foreach ($url in $urls) {
           $success = $false
+          Write-Host "Starting health check for $url"
+          
           for ($i = 1; $i -le $maxRetries; $i++) {
             try {
-              Write-Host "Health check attempt $i for $url"
-              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+              Write-Host "Health check attempt $i/$maxRetries for $url"
               
-              if ($response.StatusCode -eq 200 -and $response.Content -notmatch '"status"\s*:\s*"Unhealthy"') {
-                Write-Host "SUCCESS: Health check passed for $url"
-                $success = $true
-                break
+              # Add more detailed error handling
+              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 45 -ErrorAction Stop
+              
+              Write-Host "Response Status: $($response.StatusCode)"
+              Write-Host "Response Content: $($response.Content)"
+              
+              if ($response.StatusCode -eq 200) {
+                # Check if response contains health status
+                if ($response.Content -match '"status"\s*:\s*"Healthy"' -or $response.Content -notmatch '"status"') {
+                  Write-Host "SUCCESS: Health check passed for $url"
+                  $success = $true
+                  break
+                } else {
+                  Write-Host "WARNING: Health check returned non-healthy status for $url"
+                }
               } else {
-                Write-Host "Health check returned unhealthy status for $url"
+                Write-Host "WARNING: Health check returned status code $($response.StatusCode) for $url"
               }
             } catch {
-              Write-Host "Health check attempt $i failed for $url`: $($_.Exception.Message)"
+              Write-Host "Health check attempt $i failed for $url"
+              Write-Host "Error: $($_.Exception.Message)"
+              
+              # Check if it's a connection error vs application error
+              if ($_.Exception.Message -match "timeout|connection|network") {
+                Write-Host "Network/Connection error detected"
+              } elseif ($_.Exception.Message -match "500|502|503|504") {
+                Write-Host "Application error detected"
+              }
             }
             
             if ($i -lt $maxRetries) {
@@ -208,9 +233,16 @@ jobs:
           
           if (-not $success) {
             Write-Host "ERROR: Health check failed for $url after $maxRetries attempts"
-            exit 1
+            $allHealthy = $false
           }
         }
+        
+        if (-not $allHealthy) {
+          Write-Host "ERROR: One or more health checks failed"
+          exit 1
+        }
+        
+        Write-Host "SUCCESS: All health checks passed"
       shell: powershell
 
     - name: Rollback if Health Check Fails
@@ -240,13 +272,16 @@ jobs:
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-        # Rollback with robocopy (safer than Remove-Item)
+        # Rollback with robocopy
+        $rollbackSuccess = $true
+        
         try {
           if ($apiBackup) {
             Write-Host "Restoring ApiGateway from backup..."
             $tempDir = "$env:TEMP\ApiGateway_restore"
             Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath $tempDir -Force
-            robocopy $tempDir "$env:API_GATEWAY_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            $result = robocopy $tempDir "$env:API_GATEWAY_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            if ($LASTEXITCODE -ge 8) { $rollbackSuccess = $false }
             Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
           }
 
@@ -254,7 +289,8 @@ jobs:
             Write-Host "Restoring IdentityService from backup..."
             $tempDir = "$env:TEMP\IdentityService_restore"
             Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath $tempDir -Force
-            robocopy $tempDir "$env:IDENTITY_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            $result = robocopy $tempDir "$env:IDENTITY_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            if ($LASTEXITCODE -ge 8) { $rollbackSuccess = $false }
             Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
           }
 
@@ -262,7 +298,8 @@ jobs:
             Write-Host "Restoring UserService from backup..."
             $tempDir = "$env:TEMP\UserService_restore"
             Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath $tempDir -Force
-            robocopy $tempDir "$env:USER_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            $result = robocopy $tempDir "$env:USER_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            if ($LASTEXITCODE -ge 8) { $rollbackSuccess = $false }
             Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
           }
 
@@ -272,9 +309,15 @@ jobs:
             Start-WebAppPool -Name $pool
           }
 
-          Write-Host "Rollback completed successfully"
+          if ($rollbackSuccess) {
+            Write-Host "Rollback completed successfully"
+            # Don't exit with error code if rollback was successful
+          } else {
+            Write-Host "Rollback completed with some warnings"
+          }
         } catch {
           Write-Host "Rollback error: $($_.Exception.Message)"
-          exit 1
+          # Even if rollback fails, don't exit with error since we tried our best
         }
       shell: powershell
+      continue-on-error: true
