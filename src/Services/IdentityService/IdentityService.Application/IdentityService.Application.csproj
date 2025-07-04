@@ -15,4 +15,8 @@
     <Folder Include="Queries\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\IdentityService.Domain\IdentityService.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

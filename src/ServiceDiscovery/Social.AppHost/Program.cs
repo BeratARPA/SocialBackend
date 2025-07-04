@@ -1,16 +1,13 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 // IdentityService
-var identity = builder.AddProject("identity", "../Services/IdentityService/IdentityService.API/IdentityService.API.csproj")
-                      .WithHttpEndpoint(port: 7001);
+var identity = builder.AddProject<Projects.IdentityService_API>("IdentityService");
 
 // UserService
-var user = builder.AddProject("user", "../Services/UserService/UserService.API/UserService.API.csproj")
-                  .WithHttpEndpoint(port: 7002);
+var user = builder.AddProject<Projects.UserService_API>("UserService");
 
-// Gateway
-builder.AddProject("apigateway", "../ApiGateways/Social.ApiGateway/Social.ApiGateway.csproj")
-       .WithHttpEndpoint(port: 8080)
+// ApiGateway
+builder.AddProject<Projects.Social_ApiGateway>("ApiGateway")
        .WithReference(identity)
        .WithReference(user);
 

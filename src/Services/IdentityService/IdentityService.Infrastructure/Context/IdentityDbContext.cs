@@ -1,19 +1,18 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
-using UserService.Application.Interfaces;
-using UserService.Domain.Aggregates;
-using UserService.Domain.SeedWork;
-using UserService.Infrastructure.EntityConfigurations;
+using IdentityService.Application.Interfaces;
+using IdentityService.Domain.Aggregates;
+using IdentityService.Domain.SeedWork;
 
-namespace UserService.Infrastructure.Context
+namespace IdentityService.Infrastructure.Context
 {
-    public class UserDbContext : DbContext, IUnitOfWork
+    public class IdentityDbContext : DbContext, IUnitOfWork
     {
         private readonly IMediator _mediator;
 
-        public UserDbContext() : base() { }
+        public IdentityDbContext() : base() { }
 
-        public UserDbContext(DbContextOptions<UserDbContext> options, IMediator mediator)
+        public IdentityDbContext(DbContextOptions<IdentityDbContext> options, IMediator mediator)
             : base(options)
         {
             _mediator = mediator;
@@ -44,7 +43,7 @@ namespace UserService.Infrastructure.Context
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.ApplyConfiguration(new UserEntityConfigurations());
+            //modelBuilder.ApplyConfiguration(new UserEntityConfigurations());
         }
     }
 }

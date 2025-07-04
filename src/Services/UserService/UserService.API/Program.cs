@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using UserService.Infrastructure;
@@ -9,18 +8,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers();
-
-// Aspire Discovery
-builder.AddServiceDefaults();
-
-// Health Checks
-builder.Services.AddHealthChecks()
-    .AddSqlServer(
-        builder.Configuration.GetConnectionString("UserDbConnection"),
-        name: "UserDB",
-        failureStatus: HealthStatus.Unhealthy,
-        tags: new[] { "db", "sql" }
-    );
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -49,12 +36,6 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-
-app.MapDefaultEndpoints();
-
-app.MapHealthChecks("/health");
-
-app.MapGet("/", () => "User Service Running!");
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
