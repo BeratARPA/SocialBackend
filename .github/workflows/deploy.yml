@@ -34,19 +34,29 @@ jobs:
     - name: Publish UserService
       run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
 
-    - name: Stop App Pools Before Backup and Deploy
+    - name: Stop App Pools and Wait
       run: |
         Import-Module WebAdministration
 
-        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
-          Stop-WebAppPool -Name "SocialApiGateway"
+        # Stop all app pools
+        $appPools = @("SocialApiGateway", "IdentityService", "UserService")
+        
+        foreach ($pool in $appPools) {
+          if ((Get-WebAppPoolState -Name $pool).Value -eq "Started") {
+            Write-Host "Stopping $pool..."
+            Stop-WebAppPool -Name $pool
+          }
         }
-        if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
-          Stop-WebAppPool -Name "IdentityService"
-        }
-        if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
-          Stop-WebAppPool -Name "UserService"
-        }
+
+        # Wait for processes to completely stop
+        Write-Host "Waiting for processes to stop..."
+        Start-Sleep -Seconds 10
+
+        # Force kill any remaining w3wp processes
+        Get-Process w3wp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        
+        # Additional wait to ensure file handles are released
+        Start-Sleep -Seconds 5
       shell: powershell
 
     - name: Backup Existing Deployments
@@ -54,33 +64,112 @@ jobs:
         mkdir -Force $env:BACKUP_DIR
         $timestamp = Get-Date -Format "yyyyMMddHHmmss"
 
-        Compress-Archive -Path "$env:API_GATEWAY_PATH\*" -DestinationPath "$env:BACKUP_DIR\ApiGateway_$timestamp.zip"
-        Compress-Archive -Path "$env:IDENTITY_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\IdentityService_$timestamp.zip"
-        Compress-Archive -Path "$env:USER_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\UserService_$timestamp.zip"
+        # Backup with error handling
+        try {
+          if (Test-Path "$env:API_GATEWAY_PATH\*") {
+            Compress-Archive -Path "$env:API_GATEWAY_PATH\*" -DestinationPath "$env:BACKUP_DIR\ApiGateway_$timestamp.zip" -Force
+          }
+          if (Test-Path "$env:IDENTITY_SERVICE_PATH\*") {
+            Compress-Archive -Path "$env:IDENTITY_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\IdentityService_$timestamp.zip" -Force
+          }
+          if (Test-Path "$env:USER_SERVICE_PATH\*") {
+            Compress-Archive -Path "$env:USER_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\UserService_$timestamp.zip" -Force
+          }
+        } catch {
+          Write-Host "Backup warning: $($_.Exception.Message)"
+        }
       shell: powershell
 
     - name: Deploy ApiGateway to IIS
       run: |
-        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
-        Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
-        Import-Module WebAdministration
-        Start-WebAppPool -Name "SocialApiGateway"
+        # Safe deployment with retry mechanism
+        $maxRetries = 3
+        $retryCount = 0
+        
+        while ($retryCount -lt $maxRetries) {
+          try {
+            # Use robocopy for better file handling
+            if (Test-Path "$env:API_GATEWAY_PATH") {
+              robocopy "./publish/ApiGateway" "$env:API_GATEWAY_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            } else {
+              Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
+            }
+            
+            Import-Module WebAdministration
+            Start-WebAppPool -Name "SocialApiGateway"
+            Write-Host "ApiGateway deployed successfully"
+            break
+          } catch {
+            $retryCount++
+            Write-Host "Deployment attempt $retryCount failed: $($_.Exception.Message)"
+            if ($retryCount -ge $maxRetries) {
+              throw
+            }
+            Start-Sleep -Seconds 5
+          }
+        }
       shell: powershell
 
     - name: Deploy IdentityService to IIS
       run: |
-        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
-        Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
-        Import-Module WebAdministration
-        Start-WebAppPool -Name "IdentityService"
+        $maxRetries = 3
+        $retryCount = 0
+        
+        while ($retryCount -lt $maxRetries) {
+          try {
+            if (Test-Path "$env:IDENTITY_SERVICE_PATH") {
+              robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            } else {
+              Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
+            }
+            
+            Import-Module WebAdministration
+            Start-WebAppPool -Name "IdentityService"
+            Write-Host "IdentityService deployed successfully"
+            break
+          } catch {
+            $retryCount++
+            Write-Host "Deployment attempt $retryCount failed: $($_.Exception.Message)"
+            if ($retryCount -ge $maxRetries) {
+              throw
+            }
+            Start-Sleep -Seconds 5
+          }
+        }
       shell: powershell
 
     - name: Deploy UserService to IIS
       run: |
-        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
-        Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
-        Import-Module WebAdministration
-        Start-WebAppPool -Name "UserService"
+        $maxRetries = 3
+        $retryCount = 0
+        
+        while ($retryCount -lt $maxRetries) {
+          try {
+            if (Test-Path "$env:USER_SERVICE_PATH") {
+              robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            } else {
+              Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
+            }
+            
+            Import-Module WebAdministration
+            Start-WebAppPool -Name "UserService"
+            Write-Host "UserService deployed successfully"
+            break
+          } catch {
+            $retryCount++
+            Write-Host "Deployment attempt $retryCount failed: $($_.Exception.Message)"
+            if ($retryCount -ge $maxRetries) {
+              throw
+            }
+            Start-Sleep -Seconds 5
+          }
+        }
+      shell: powershell
+
+    - name: Wait for Services to Start
+      run: |
+        Write-Host "Waiting for services to fully start..."
+        Start-Sleep -Seconds 15
       shell: powershell
 
     - name: Health Check
@@ -90,16 +179,35 @@ jobs:
         $userUrl = "https://api.iscsocial.com/user/health"
 
         $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
+        $maxRetries = 5
+        $retryDelay = 10
 
         foreach ($url in $urls) {
-          try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-            if ($response.StatusCode -ne 200 -or ($response.Content -match '"status"\s*:\s*"Unhealthy"')) {
-              Write-Host "ERROR: Health check failed for $url"
-              exit 1
+          $success = $false
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            try {
+              Write-Host "Health check attempt $i for $url"
+              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+              
+              if ($response.StatusCode -eq 200 -and $response.Content -notmatch '"status"\s*:\s*"Unhealthy"') {
+                Write-Host "SUCCESS: Health check passed for $url"
+                $success = $true
+                break
+              } else {
+                Write-Host "Health check returned unhealthy status for $url"
+              }
+            } catch {
+              Write-Host "Health check attempt $i failed for $url`: $($_.Exception.Message)"
             }
-          } catch {
-            Write-Host "ERROR: Health check exception for $url"
+            
+            if ($i -lt $maxRetries) {
+              Write-Host "Waiting $retryDelay seconds before retry..."
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+          
+          if (-not $success) {
+            Write-Host "ERROR: Health check failed for $url after $maxRetries attempts"
             exit 1
           }
         }
@@ -112,29 +220,61 @@ jobs:
 
         Import-Module WebAdministration
 
-        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
-          Stop-WebAppPool -Name "SocialApiGateway"
-        }
-        if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
-          Stop-WebAppPool -Name "IdentityService"
-        }
-        if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
-          Stop-WebAppPool -Name "UserService"
+        # Stop app pools
+        $appPools = @("SocialApiGateway", "IdentityService", "UserService")
+        
+        foreach ($pool in $appPools) {
+          if ((Get-WebAppPoolState -Name $pool).Value -eq "Started") {
+            Write-Host "Stopping $pool for rollback..."
+            Stop-WebAppPool -Name $pool
+          }
         }
 
+        # Wait and kill processes
+        Start-Sleep -Seconds 10
+        Get-Process w3wp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
+
+        # Find latest backups
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
-        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
-        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
+        # Rollback with robocopy (safer than Remove-Item)
+        try {
+          if ($apiBackup) {
+            Write-Host "Restoring ApiGateway from backup..."
+            $tempDir = "$env:TEMP\ApiGateway_restore"
+            Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath $tempDir -Force
+            robocopy $tempDir "$env:API_GATEWAY_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+          }
 
-        Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:API_GATEWAY_PATH" -Force
-        Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
-        Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
+          if ($identityBackup) {
+            Write-Host "Restoring IdentityService from backup..."
+            $tempDir = "$env:TEMP\IdentityService_restore"
+            Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath $tempDir -Force
+            robocopy $tempDir "$env:IDENTITY_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+          }
 
-        Start-WebAppPool -Name "SocialApiGateway"
-        Start-WebAppPool -Name "IdentityService"
-        Start-WebAppPool -Name "UserService"
+          if ($userBackup) {
+            Write-Host "Restoring UserService from backup..."
+            $tempDir = "$env:TEMP\UserService_restore"
+            Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath $tempDir -Force
+            robocopy $tempDir "$env:USER_SERVICE_PATH" /MIR /R:3 /W:5 /NFL /NDL
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+          }
+
+          # Start app pools
+          foreach ($pool in $appPools) {
+            Write-Host "Starting $pool after rollback..."
+            Start-WebAppPool -Name $pool
+          }
+
+          Write-Host "Rollback completed successfully"
+        } catch {
+          Write-Host "Rollback error: $($_.Exception.Message)"
+          exit 1
+        }
       shell: powershell
