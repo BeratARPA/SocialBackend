@@ -34,6 +34,14 @@ jobs:
     - name: Publish UserService
       run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
 
+    - name: Stop App Pools Before Backup and Deploy
+      run: |
+        Import-Module WebAdministration
+        Stop-WebAppPool -Name "SocialApiGateway"
+        Stop-WebAppPool -Name "IdentityService"
+        Stop-WebAppPool -Name "UserService"
+      shell: powershell
+
     - name: Backup Existing Deployments
       run: |
         mkdir -Force $env:BACKUP_DIR
@@ -95,6 +103,11 @@ jobs:
       run: |
         Write-Host "Rolling back to previous version..."
 
+        Import-Module WebAdministration
+        Stop-WebAppPool -Name "SocialApiGateway"
+        Stop-WebAppPool -Name "IdentityService"
+        Stop-WebAppPool -Name "UserService"
+
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -107,7 +120,6 @@ jobs:
         Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
         Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
 
-        Import-Module WebAdministration
         Restart-WebAppPool -Name "SocialApiGateway"
         Restart-WebAppPool -Name "IdentityService"
         Restart-WebAppPool -Name "UserService"
