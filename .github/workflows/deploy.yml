@@ -57,7 +57,7 @@ jobs:
         Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
         Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "SocialApiGateway"
+        Start-WebAppPool -Name "SocialApiGateway"
       shell: powershell
 
     - name: Deploy IdentityService to IIS
@@ -65,7 +65,7 @@ jobs:
         Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
         Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "IdentityService"
+        Start-WebAppPool -Name "IdentityService"
       shell: powershell
 
     - name: Deploy UserService to IIS
@@ -73,7 +73,7 @@ jobs:
         Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
         Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "UserService"
+        Start-WebAppPool -Name "UserService"
       shell: powershell
 
     - name: Health Check
@@ -104,9 +104,9 @@ jobs:
         Write-Host "Rolling back to previous version..."
 
         Import-Module WebAdministration
-        Stop-WebAppPool -Name "SocialApiGateway"
-        Stop-WebAppPool -Name "IdentityService"
-        Stop-WebAppPool -Name "UserService"
+        Stop-WebAppPool -Name "SocialApiGateway" -ErrorAction SilentlyContinue
+        Stop-WebAppPool -Name "IdentityService" -ErrorAction SilentlyContinue
+        Stop-WebAppPool -Name "UserService" -ErrorAction SilentlyContinue
 
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -120,7 +120,7 @@ jobs:
         Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
         Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
 
-        Restart-WebAppPool -Name "SocialApiGateway"
-        Restart-WebAppPool -Name "IdentityService"
-        Restart-WebAppPool -Name "UserService"
+        Start-WebAppPool -Name "SocialApiGateway"
+        Start-WebAppPool -Name "IdentityService"
+        Start-WebAppPool -Name "UserService"
       shell: powershell
