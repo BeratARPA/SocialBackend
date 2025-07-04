@@ -37,9 +37,16 @@ jobs:
     - name: Stop App Pools Before Backup and Deploy
       run: |
         Import-Module WebAdministration
-        Stop-WebAppPool -Name "SocialApiGateway"
-        Stop-WebAppPool -Name "IdentityService"
-        Stop-WebAppPool -Name "UserService"
+
+        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
+          Stop-WebAppPool -Name "SocialApiGateway"
+        }
+        if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
+          Stop-WebAppPool -Name "IdentityService"
+        }
+        if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
+          Stop-WebAppPool -Name "UserService"
+        }
       shell: powershell
 
     - name: Backup Existing Deployments
@@ -104,9 +111,16 @@ jobs:
         Write-Host "Rolling back to previous version..."
 
         Import-Module WebAdministration
-        Stop-WebAppPool -Name "SocialApiGateway" -ErrorAction SilentlyContinue
-        Stop-WebAppPool -Name "IdentityService" -ErrorAction SilentlyContinue
-        Stop-WebAppPool -Name "UserService" -ErrorAction SilentlyContinue
+
+        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
+          Stop-WebAppPool -Name "SocialApiGateway"
+        }
+        if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
+          Stop-WebAppPool -Name "IdentityService"
+        }
+        if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
+          Stop-WebAppPool -Name "UserService"
+        }
 
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
