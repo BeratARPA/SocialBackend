@@ -81,8 +81,12 @@ jobs:
       run: |
         $result = robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
         $exitCode = $LASTEXITCODE
-        if ($exitCode -ge 8) { throw "Robocopy failed with exit code $exitCode" }
-        Write-Host "Robocopy success: $exitCode"
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
+        }
         Import-Module WebAdministration
         Start-WebAppPool -Name "IdentityService"
       shell: powershell
@@ -91,8 +95,12 @@ jobs:
       run: |
         $result = robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
         $exitCode = $LASTEXITCODE
-        if ($exitCode -ge 8) { throw "Robocopy failed with exit code $exitCode" }
-        Write-Host "Robocopy success: $exitCode"
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
+        }
         Import-Module WebAdministration
         Start-WebAppPool -Name "UserService"
       shell: powershell
