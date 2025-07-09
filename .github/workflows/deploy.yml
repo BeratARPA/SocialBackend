@@ -123,7 +123,7 @@ jobs:
           for ($i=1; $i -le 5; $i++) {
             try {
               $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
-              if ($res.StatusCode -eq 200 -and ($res.Content -match '"status"\s*:\s*"Healthy"' -or $res.Content -notmatch '"status"')) {
+              if ($res.StatusCode -eq 200 -and $res.Content -match '"status"\s*:\s*"Healthy"') {
                 $ok = $true; break
               }
             } catch {}
@@ -177,5 +177,6 @@ jobs:
           Start-WebAppPool -Name $pool
         }
         Write-Host "Rollback completed"
+        exit 0
       shell: powershell
       continue-on-error: true
