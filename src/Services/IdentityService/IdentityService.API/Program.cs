@@ -1,20 +1,37 @@
 using IdentityService.Infrastructure;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "Identity Service API", Version = "v1" });
+});
 
 builder.Services.AddInfrastructure(builder.Configuration);
+
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 
 builder.Services.AddHealthChecks()
     .AddSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 var app = builder.Build();
+
+app.UseCors("AllowAll");
 
 app.MapHealthChecks("/health");
 
@@ -22,17 +39,33 @@ app.MapHealthChecks("/health");
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    if (app.Environment.IsDevelopment())
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Identity Service API V1");
-        c.RoutePrefix = string.Empty; // Set Swagger UI at the app's root
-    });
+        app.UseDeveloperExceptionPage();
+        app.UseSwagger(c =>
+        {
+            c.PreSerializeFilters.Add((swagger, httpReq) =>
+            {
+                var serverUrl = $"{httpReq.Scheme}://{httpReq.Host.Value}";
+                if (httpReq.Path.Value.Contains("/swagger/identity"))
+                {
+                    serverUrl += "/identity";
+                }
+                swagger.Servers = new List<OpenApiServer> { new OpenApiServer { Url = serverUrl } };
+            });
+        });
+        app.UseSwaggerUI(c =>
+        {
+            c.SwaggerEndpoint("/swagger/v1/swagger.json", "Identity Service API V1");
+            c.RoutePrefix = "swagger";
+        });
+    }
 }
 
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();
