@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json;
 using UserService.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,7 +56,15 @@ var app = builder.Build();
 
 app.UseCors("AllowAll");
 
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var json = JsonSerializer.Serialize(new { status = report.Status.ToString() });
+        await context.Response.WriteAsync(json);
+    }
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
