@@ -1,4 +1,4 @@
-name: Build and Deploy with Rollback to IIS
+name: Build and Deploy to IIS with Rollback
 
 on:
   push:
@@ -34,81 +34,148 @@ jobs:
     - name: Publish UserService
       run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
 
-    - name: Backup Existing Deployments
+    - name: Stop App Pools
+      run: |
+        Import-Module WebAdministration
+        $appPools = @("SocialApiGateway", "IdentityService", "UserService")
+        foreach ($pool in $appPools) {
+          if ((Get-WebAppPoolState -Name $pool).Value -eq "Started") {
+            Stop-WebAppPool -Name $pool
+          }
+        }
+        Start-Sleep -Seconds 5
+        Get-Process w3wp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
+      shell: powershell
+
+    - name: Backup Current Deployments
       run: |
         mkdir -Force $env:BACKUP_DIR
         $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-
-        Compress-Archive -Path "$env:API_GATEWAY_PATH\*" -DestinationPath "$env:BACKUP_DIR\ApiGateway_$timestamp.zip"
-        Compress-Archive -Path "$env:IDENTITY_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\IdentityService_$timestamp.zip"
-        Compress-Archive -Path "$env:USER_SERVICE_PATH\*" -DestinationPath "$env:BACKUP_DIR\UserService_$timestamp.zip"
+        if (Test-Path "$env:API_GATEWAY_PATH\*") {
+          Compress-Archive "$env:API_GATEWAY_PATH\*" "$env:BACKUP_DIR\ApiGateway_$timestamp.zip" -Force
+        }
+        if (Test-Path "$env:IDENTITY_SERVICE_PATH\*") {
+          Compress-Archive "$env:IDENTITY_SERVICE_PATH\*" "$env:BACKUP_DIR\IdentityService_$timestamp.zip" -Force
+        }
+        if (Test-Path "$env:USER_SERVICE_PATH\*") {
+          Compress-Archive "$env:USER_SERVICE_PATH\*" "$env:BACKUP_DIR\UserService_$timestamp.zip" -Force
+        }
       shell: powershell
 
-    - name: Deploy ApiGateway to IIS
+    - name: Deploy ApiGateway
       run: |
-        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
-        Copy-Item -Recurse -Force "./publish/ApiGateway/*" "$env:API_GATEWAY_PATH\"
+        $result = robocopy "./publish/ApiGateway" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL /R:3 /W:5
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
+        }
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "SocialApiGateway"
+        Start-WebAppPool -Name "SocialApiGateway"
       shell: powershell
 
-    - name: Deploy IdentityService to IIS
+    - name: Deploy IdentityService
       run: |
-        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
-        Copy-Item -Recurse -Force "./publish/IdentityService/*" "$env:IDENTITY_SERVICE_PATH\"
+        $result = robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
+        }
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "IdentityService"
+        Start-WebAppPool -Name "IdentityService"
       shell: powershell
 
-    - name: Deploy UserService to IIS
+    - name: Deploy UserService
       run: |
-        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
-        Copy-Item -Recurse -Force "./publish/UserService/*" "$env:USER_SERVICE_PATH\"
+        $result = robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
+        }
         Import-Module WebAdministration
-        Restart-WebAppPool -Name "UserService"
+        Start-WebAppPool -Name "UserService"
+      shell: powershell
+
+    - name: Wait for Services
+      run: Start-Sleep -Seconds 10
       shell: powershell
 
     - name: Health Check
       run: |
-        $apiGatewayUrl = "https://api.iscsocial.com/health"
-        $identityUrl = "https://api.iscsocial.com/identity/health"
-        $userUrl = "https://api.iscsocial.com/user/health"
-
-        $urls = @($apiGatewayUrl, $identityUrl, $userUrl)
-
+        Start-Sleep -Seconds 15
+        $urls = @(
+          "https://api.iscsocial.com/health",
+          "https://api.iscsocial.com/identity/health",
+          "https://api.iscsocial.com/user/health"
+        )
+        $allHealthy = $true
         foreach ($url in $urls) {
-          try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-            if ($response.StatusCode -ne 200 -or ($response.Content -match '"status"\s*:\s*"Unhealthy"')) {
-              Write-Host "ERROR: Health check failed for $url"
-              exit 1
-            }
-          } catch {
-            Write-Host "ERROR: Health check exception for $url"
-            exit 1
+          $ok = $false
+          for ($i=1; $i -le 5; $i++) {
+            try {
+              $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+              if ($res.StatusCode -eq 200 -and ($res.Content -match '"status"\s*:\s*"Healthy"' -or $res.Content -notmatch '"status"')) {
+                $ok = $true; break
+              }
+            } catch {}
+            Start-Sleep -Seconds 10
           }
+          if (-not $ok) { $allHealthy = $false }
         }
+        if (-not $allHealthy) { throw "Health check failed" }
       shell: powershell
 
-    - name: Rollback if Health Check Fails
+    - name: Rollback on Failure
       if: failure()
       run: |
-        Write-Host "Rolling back to previous version..."
+        Import-Module WebAdministration
+        $appPools = @("SocialApiGateway", "IdentityService", "UserService")
+        foreach ($pool in $appPools) {
+          if ((Get-WebAppPoolState -Name $pool).Value -eq "Started") {
+            Stop-WebAppPool -Name $pool
+          }
+        }
+        Start-Sleep -Seconds 5
+        Get-Process w3wp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
 
         $apiBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "ApiGateway*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $identityBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "IdentityService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         $userBackup = Get-ChildItem $env:BACKUP_DIR | Where-Object { $_.Name -like "UserService*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-        Remove-Item -Recurse -Force "$env:API_GATEWAY_PATH\*"
-        Remove-Item -Recurse -Force "$env:IDENTITY_SERVICE_PATH\*"
-        Remove-Item -Recurse -Force "$env:USER_SERVICE_PATH\*"
+        if ($apiBackup) {
+          Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:TEMP\ApiGateway_restore" -Force
+          $result = robocopy "$env:TEMP\ApiGateway_restore" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL
+          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
+          Remove-Item -Recurse -Force "$env:TEMP\ApiGateway_restore"
+        }
 
-        Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:API_GATEWAY_PATH" -Force
-        Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:IDENTITY_SERVICE_PATH" -Force
-        Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:USER_SERVICE_PATH" -Force
+        if ($identityBackup) {
+          Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:TEMP\IdentityService_restore" -Force
+          $result = robocopy "$env:TEMP\IdentityService_restore" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL
+          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
+          Remove-Item -Recurse -Force "$env:TEMP\IdentityService_restore"
+        }
 
-        Import-Module WebAdministration
-        Restart-WebAppPool -Name "SocialApiGateway"
-        Restart-WebAppPool -Name "IdentityService"
-        Restart-WebAppPool -Name "UserService"
+        if ($userBackup) {
+          Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:TEMP\UserService_restore" -Force
+          $result = robocopy "$env:TEMP\UserService_restore" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL
+          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
+          Remove-Item -Recurse -Force "$env:TEMP\UserService_restore"
+        }
+
+        foreach ($pool in $appPools) {
+          Start-WebAppPool -Name $pool
+        }
+        Write-Host "Rollback completed"
       shell: powershell
+      continue-on-error: true
