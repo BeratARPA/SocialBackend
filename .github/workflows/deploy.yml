@@ -34,33 +34,24 @@ jobs:
     - name: Publish UserService
       run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
 
-    - name: Backup Current Deployments
+    - name: Deploy ApiGateway
       run: |
+        Import-Module WebAdministration
+
+        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
+          Stop-WebAppPool -Name "SocialApiGateway"
+        }
+        Start-Sleep -Seconds 5
+
         mkdir -Force $env:BACKUP_DIR
         $timestamp = Get-Date -Format "yyyyMMddHHmmss"
         if (Test-Path "$env:API_GATEWAY_PATH\*") {
           Compress-Archive "$env:API_GATEWAY_PATH\*" "$env:BACKUP_DIR\ApiGateway_$timestamp.zip" -Force
         }
-        if (Test-Path "$env:IDENTITY_SERVICE_PATH\*") {
-          Compress-Archive "$env:IDENTITY_SERVICE_PATH\*" "$env:BACKUP_DIR\IdentityService_$timestamp.zip" -Force
-        }
-        if (Test-Path "$env:USER_SERVICE_PATH\*") {
-          Compress-Archive "$env:USER_SERVICE_PATH\*" "$env:BACKUP_DIR\UserService_$timestamp.zip" -Force
-        }
-      shell: powershell
-
-    - name: Deploy ApiGateway
-      run: |
-        Import-Module WebAdministration
-        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
-          Stop-WebAppPool -Name "SocialApiGateway"
-        }
-        Start-Sleep -Seconds 3
 
         $result = robocopy "./publish/ApiGateway" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL /R:3 /W:5
-        $exitCode = $LASTEXITCODE
-        if ($exitCode -ge 8) {
-         throw "Robocopy failed with exit code $exitCode"
+        if ($LASTEXITCODE -ge 8) {
+          throw "Robocopy failed with exit code $LASTEXITCODE"
         }
 
         Start-WebAppPool -Name "SocialApiGateway"
@@ -69,15 +60,21 @@ jobs:
     - name: Deploy IdentityService
       run: |
         Import-Module WebAdministration
+
         if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
           Stop-WebAppPool -Name "IdentityService"
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 5
+
+        mkdir -Force $env:BACKUP_DIR
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        if (Test-Path "$env:IDENTITY_SERVICE_PATH\*") {
+          Compress-Archive "$env:IDENTITY_SERVICE_PATH\*" "$env:BACKUP_DIR\IdentityService_$timestamp.zip" -Force
+        }
 
         $result = robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
-        $exitCode = $LASTEXITCODE
-        if ($exitCode -ge 8) {
-         throw "Robocopy failed with exit code $exitCode"
+        if ($LASTEXITCODE -ge 8) {
+          throw "Robocopy failed with exit code $LASTEXITCODE"
         }
 
         Start-WebAppPool -Name "IdentityService"
@@ -86,15 +83,21 @@ jobs:
     - name: Deploy UserService
       run: |
         Import-Module WebAdministration
+
         if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
           Stop-WebAppPool -Name "UserService"
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 5
+
+        mkdir -Force $env:BACKUP_DIR
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        if (Test-Path "$env:USER_SERVICE_PATH\*") {
+          Compress-Archive "$env:USER_SERVICE_PATH\*" "$env:BACKUP_DIR\UserService_$timestamp.zip" -Force
+        }
 
         $result = robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
-        $exitCode = $LASTEXITCODE
-        if ($exitCode -ge 8) {
-         throw "Robocopy failed with exit code $exitCode"
+        if ($LASTEXITCODE -ge 8) {
+          throw "Robocopy failed with exit code $LASTEXITCODE"
         }
 
         Start-WebAppPool -Name "UserService"
@@ -150,27 +153,25 @@ jobs:
         if ($apiBackup) {
           Expand-Archive -Path "$env:BACKUP_DIR\$($apiBackup.Name)" -DestinationPath "$env:TEMP\ApiGateway_restore" -Force
           $result = robocopy "$env:TEMP\ApiGateway_restore" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL
-          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
           Remove-Item -Recurse -Force "$env:TEMP\ApiGateway_restore"
         }
 
         if ($identityBackup) {
           Expand-Archive -Path "$env:BACKUP_DIR\$($identityBackup.Name)" -DestinationPath "$env:TEMP\IdentityService_restore" -Force
           $result = robocopy "$env:TEMP\IdentityService_restore" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL
-          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
           Remove-Item -Recurse -Force "$env:TEMP\IdentityService_restore"
         }
 
         if ($userBackup) {
           Expand-Archive -Path "$env:BACKUP_DIR\$($userBackup.Name)" -DestinationPath "$env:TEMP\UserService_restore" -Force
           $result = robocopy "$env:TEMP\UserService_restore" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL
-          if ($LASTEXITCODE -ge 8) { Write-Host "Rollback robocopy failed" }
           Remove-Item -Recurse -Force "$env:TEMP\UserService_restore"
         }
 
         foreach ($pool in $appPools) {
           Start-WebAppPool -Name $pool
         }
+
         Write-Host "Rollback completed"
         exit 0
       shell: powershell
