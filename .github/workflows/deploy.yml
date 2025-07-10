@@ -50,8 +50,13 @@ jobs:
         }
 
         $result = robocopy "./publish/ApiGateway" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL /R:3 /W:5
-        if ($LASTEXITCODE -ge 8) {
-          throw "Robocopy failed with exit code $LASTEXITCODE"
+        
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
         }
 
         Start-WebAppPool -Name "SocialApiGateway"
@@ -73,8 +78,13 @@ jobs:
         }
 
         $result = robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
-        if ($LASTEXITCODE -ge 8) {
-          throw "Robocopy failed with exit code $LASTEXITCODE"
+        
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
         }
 
         Start-WebAppPool -Name "IdentityService"
@@ -96,8 +106,13 @@ jobs:
         }
 
         $result = robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
-        if ($LASTEXITCODE -ge 8) {
-          throw "Robocopy failed with exit code $LASTEXITCODE"
+        
+        $exitCode = $LASTEXITCODE
+        Write-Host "Robocopy exit code: $exitCode"
+        if ($exitCode -ge 8) {
+         throw "Robocopy failed with exit code $exitCode"
+        } else {
+          exit 0
         }
 
         Start-WebAppPool -Name "UserService"
