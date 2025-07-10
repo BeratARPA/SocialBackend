@@ -34,20 +34,6 @@ jobs:
     - name: Publish UserService
       run: dotnet publish src/Services/UserService/UserService.API/UserService.API.csproj -c Release -o ./publish/UserService
 
-    - name: Stop App Pools
-      run: |
-        Import-Module WebAdministration
-        $appPools = @("SocialApiGateway", "IdentityService", "UserService")
-        foreach ($pool in $appPools) {
-          if ((Get-WebAppPoolState -Name $pool).Value -eq "Started") {
-            Stop-WebAppPool -Name $pool
-          }
-        }
-        Start-Sleep -Seconds 5
-        Get-Process w3wp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 5
-      shell: powershell
-
     - name: Backup Current Deployments
       run: |
         mkdir -Force $env:BACKUP_DIR
@@ -65,43 +51,52 @@ jobs:
 
     - name: Deploy ApiGateway
       run: |
+        Import-Module WebAdministration
+        if ((Get-WebAppPoolState -Name "SocialApiGateway").Value -eq "Started") {
+          Stop-WebAppPool -Name "SocialApiGateway"
+        }
+        Start-Sleep -Seconds 3
+
         $result = robocopy "./publish/ApiGateway" "$env:API_GATEWAY_PATH" /MIR /NFL /NDL /R:3 /W:5
         $exitCode = $LASTEXITCODE
-        Write-Host "Robocopy exit code: $exitCode"
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
-        } else {
-          exit 0
         }
-        Import-Module WebAdministration
+
         Start-WebAppPool -Name "SocialApiGateway"
       shell: powershell
 
     - name: Deploy IdentityService
       run: |
+        Import-Module WebAdministration
+        if ((Get-WebAppPoolState -Name "IdentityService").Value -eq "Started") {
+          Stop-WebAppPool -Name "IdentityService"
+        }
+        Start-Sleep -Seconds 3
+
         $result = robocopy "./publish/IdentityService" "$env:IDENTITY_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
         $exitCode = $LASTEXITCODE
-        Write-Host "Robocopy exit code: $exitCode"
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
-        } else {
-          exit 0
         }
-        Import-Module WebAdministration
+
         Start-WebAppPool -Name "IdentityService"
       shell: powershell
 
     - name: Deploy UserService
       run: |
+        Import-Module WebAdministration
+        if ((Get-WebAppPoolState -Name "UserService").Value -eq "Started") {
+          Stop-WebAppPool -Name "UserService"
+        }
+        Start-Sleep -Seconds 3
+
         $result = robocopy "./publish/UserService" "$env:USER_SERVICE_PATH" /MIR /NFL /NDL /R:3 /W:5
         $exitCode = $LASTEXITCODE
-        Write-Host "Robocopy exit code: $exitCode"
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
-        } else {
-          exit 0
         }
-        Import-Module WebAdministration
+
         Start-WebAppPool -Name "UserService"
       shell: powershell
 
