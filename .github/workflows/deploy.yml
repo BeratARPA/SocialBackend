@@ -53,13 +53,14 @@ jobs:
         
         $exitCode = $LASTEXITCODE
         Write-Host "Robocopy exit code: $exitCode"
+        
+        Start-WebAppPool -Name "SocialApiGateway"
+        
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
         } else {
           exit 0
         }
-
-        Start-WebAppPool -Name "SocialApiGateway"
       shell: powershell
 
     - name: Deploy IdentityService
@@ -81,13 +82,14 @@ jobs:
         
         $exitCode = $LASTEXITCODE
         Write-Host "Robocopy exit code: $exitCode"
+
+        Start-WebAppPool -Name "IdentityService"
+        
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
         } else {
           exit 0
-        }
-
-        Start-WebAppPool -Name "IdentityService"
+        }    
       shell: powershell
 
     - name: Deploy UserService
@@ -109,13 +111,14 @@ jobs:
         
         $exitCode = $LASTEXITCODE
         Write-Host "Robocopy exit code: $exitCode"
+
+        Start-WebAppPool -Name "UserService"
+        
         if ($exitCode -ge 8) {
          throw "Robocopy failed with exit code $exitCode"
         } else {
           exit 0
-        }
-
-        Start-WebAppPool -Name "UserService"
+        }      
       shell: powershell
 
     - name: Wait for Services
