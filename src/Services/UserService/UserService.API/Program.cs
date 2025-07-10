@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Prometheus;
 using System.Text;
 using System.Text.Json;
 using UserService.Infrastructure;
@@ -53,6 +54,10 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Prometheus 
+app.UseHttpMetrics();
+app.MapMetrics();
 
 app.UseCors("AllowAll");
 

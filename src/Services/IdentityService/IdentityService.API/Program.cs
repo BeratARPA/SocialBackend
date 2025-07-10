@@ -1,6 +1,7 @@
 using IdentityService.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using Prometheus;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +33,10 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Prometheus 
+app.UseHttpMetrics();
+app.MapMetrics();
 
 app.UseCors("AllowAll");
 

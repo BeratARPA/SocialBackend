@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,10 @@ builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
 var app = builder.Build();
+
+// Prometheus 
+app.UseHttpMetrics();
+app.MapMetrics();
 
 // Health endpoint – diðer servisleri kontrol eder
 app.MapGet("/health", async ([FromServices] IHttpClientFactory httpClientFactory) =>
