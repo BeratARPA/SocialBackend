@@ -1,3 +1,4 @@
+using IdentityService.Application;
 using IdentityService.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
@@ -15,6 +16,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddApplication();
 
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
