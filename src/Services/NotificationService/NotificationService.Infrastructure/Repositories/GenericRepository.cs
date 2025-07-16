@@ -1,16 +1,16 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using NotificationService.Application.Interfaces;
+using NotificationService.Domain.SeedWork;
+using NotificationService.Infrastructure.Context;
 using System.Linq.Expressions;
-using UserService.Application.Interfaces;
-using UserService.Domain.SeedWork;
-using UserService.Infrastructure.Context;
 
-namespace UserService.Infrastructure.Repositories
+namespace NotificationService.Infrastructure.Repositories
 {
     public class GenericRepository<T> : IGenericRepository<T> where T : BaseEntity
     {
-        private readonly UserDbContext _context;
+        private readonly NotificationDbContext _context;
 
-        public GenericRepository(UserDbContext context)
+        public GenericRepository(NotificationDbContext context)
         {
             _context = context;
         }
@@ -47,7 +47,7 @@ namespace UserService.Infrastructure.Repositories
             if (!string.IsNullOrEmpty(includes))
                 query = query.Include(includes);
 
-            return await query.FirstOrDefaultAsync();
+            return await query.FirstOrDefaultAsync();          
         }
 
         public async Task<IEnumerable<T>> GetAllAsync()

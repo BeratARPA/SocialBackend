@@ -37,12 +37,17 @@ namespace IdentityService.Infrastructure.Repositories
             return await _context.Set<T>().AnyAsync(predicate);
         }
 
-        public Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>>? filter = null, string? includes = null)
+        public async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>>? filter = null, string? includes = null)
         {
-            return _context.Set<T>()
-                .Where(filter ?? (x => true))
-                .Include(includes ?? string.Empty)
-                .FirstOrDefaultAsync();
+            var query = _context.Set<T>().AsQueryable();
+
+            if (filter != null)
+                query = query.Where(filter);
+
+            if (!string.IsNullOrEmpty(includes))
+                query = query.Include(includes);
+
+            return await query.FirstOrDefaultAsync();          
         }
 
         public async Task<IEnumerable<T>> GetAllAsync()

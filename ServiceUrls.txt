@@ -1,0 +1,4 @@
+http://localhost:8080 => ApiGateway
+http://localhost:7001 => IdentityService
+http://localhost:7002 => UserService
+http://localhost:7003 => NotificationService
